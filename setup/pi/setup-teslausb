@@ -51,6 +51,7 @@ TESLAUSB_HOSTNAME=${TESLAUSB_HOSTNAME:-teslausb}
 SAMBA_ENABLED=${SAMBA_ENABLED:-false}
 SAMBA_GUEST=${SAMBA_GUEST:-false}
 SNAPSHOTS_ENABLED=${SNAPSHOTS_ENABLED:-true}
+INCREASE_ROOT_SIZE=${INCREASE_ROOT_SIZE:-0}
 export camsize=${camsize:-90%}
 export musicsize=${musicsize:-100%}
 export usb_drive=${usb_drive:-''}
@@ -68,6 +69,54 @@ if ! [ $(id -u) = 0 ]
 then
   setup_progress "STOP: Run sudo -i."
   exit 1
+fi
+
+function dehumanize () {
+  echo $(($(echo $1 | sed 's/G/*1024M/;s/M/*1024K/;s/K/*1024/')))
+}
+
+REBOOT=false
+
+# wpa_supplicant should have a country code. Use US as the default
+# to avoid using the disallowed channels in the US.
+WPA=/etc/wpa_supplicant/wpa_supplicant.conf 
+if ! grep -q "country=" $WPA
+then
+  setup_progress "adding country code to wpa_supplicant.conf"
+  echo "country=US" >> $WPA
+  REBOOT=true
+fi
+
+INCREASE_ROOT_SIZE=$(($(dehumanize $INCREASE_ROOT_SIZE) / 512))
+
+if [ "$INCREASE_ROOT_SIZE" != "0" -a ! -e /dev/mmcblkp03 ]
+then
+  if [ ! -e /root/TESLAUSB_ROOT_PARTITION_INCREASED ]
+  then
+    touch /root/TESLAUSB_ROOT_PARTITION_INCREASED
+    ROOTSTART=$(partx --show -g -o START /dev/mmcblk0p2)
+    ROOTSIZE=$(partx --show -g -o SECTORS /dev/mmcblk0p2)
+    ROOTSIZE=$(($ROOTSIZE+$INCREASE_ROOT_SIZE))
+    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force /dev/mmcblk0 -N 2
+    setup_progress "increased root partition size"
+    REBOOT=true
+  else
+    setup_progress "increasing root filesystem size to match partition size"
+    resize2fs /dev/mmcblk0p2
+  fi
+fi
+
+if [ "$REBOOT" = "true" ]
+then
+  if [ -t 0 ]
+  then
+    setup_progress "please reboot for changes to take effect"
+    exit
+  else
+    setup_progress "rebooting for changes to take effect"
+    reboot
+    exit
+  fi
 fi
 
 function headless_setup_populate_variables () {
@@ -108,7 +157,7 @@ function headless_setup_mark_setup_success () {
 function headless_setup_progress_flash () {
   if [ $USE_LED_FOR_SETUP_PROGRESS = "true" ] && [ $HEADLESS_SETUP = "true" ]
   then
-    /etc/stage_flash $1
+    /etc/stage_flash $1 || setup_progress "error calling stage_flash"
   fi
 }
 
@@ -276,6 +325,13 @@ function set_timezone () {
   fi
 }
 
+function cmd_install {
+  /root/bin/remountfs_rw
+  get_script /root/bin $(basename $1) $(dirname $1)
+  setup_progress "$1 installed in /root/bin/"
+  exit
+}
+
 function cmd_selfupdate {
   get_script /tmp setup-teslausb setup/pi &> /dev/null
   if cmp -s /tmp/setup-teslausb /root/bin/setup-teslausb
@@ -362,16 +418,33 @@ function cmd_diagnose {
       echo "mutable not in fstab"
     fi
 
+    numsnapshots=$(mount | grep snapshot | wc -l)
+    echo "$numsnapshots snapshots mounted"
+
     if [ ! -e /boot/TESLAUSB_SETUP_FINISHED ]
     then
       echo 'setup did not finish'
     fi
 
-    echo -e "====== disk ======"
-    parted /dev/mmcblk0 print
+    echo -e "====== disk / images ======"
+    parted -s /dev/mmcblk0 print || true
     if [ ! -z "$usb_drive" ]
     then
-      parted $usb_drive print
+      parted -s $usb_drive print || true
+    fi
+    if [ -f /backingfiles/cam_disk.bin ]
+    then
+      echo "cam disk image has $(($(xfs_bmap /backingfiles/cam_disk.bin | wc -l)-1)) extents"
+      parted -s /backingfiles/cam_disk.bin print || true
+    else
+      echo "no cam disk image found"
+    fi
+    if [ -f /backingfiles/music_disk.bin ]
+    then
+      echo "music disk image has $(($(xfs_bmap /backingfiles/music_disk.bin | wc -l)-1)) extents"
+      parted -s /backingfiles/music_disk.bin print || true
+    else
+      echo "no music disk image found"
     fi
 
     echo -e "====== network ======"
@@ -423,7 +496,7 @@ function cmd_diagnose {
     fi
 
     echo -e "====== dmesg ======"
-    dmesg
+    dmesg -T
     echo -e "====== process list and uptime ======"
     ps -eaf
     echo "$(hostname) has been $(uptime -p). System time is $(date)"
@@ -453,8 +526,11 @@ fi
 
 if [ ! -z ${1:+x} ]
 then
-  if typeset -f cmd_$1 > /dev/null; then
-    cmd_$1
+  command=cmd_$1
+  if typeset -f $command > /dev/null
+  then
+    shift
+    $command "$@"
     exit 0
   else
     setup_progress "unknown command: $1"
