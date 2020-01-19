@@ -1,21 +1,22 @@
 #!/bin/bash -eu
 
 function log_progress () {
+  # shellcheck disable=SC2034
   if typeset -f setup_progress > /dev/null; then
-    setup_progress "verify-and-configure-archive: $@"
+    setup_progress "verify-and-configure-archive: $*"
   fi
   echo "verify-and-configure-archive: $1"
 }
 
 function verify_configuration () {
-    log_progress "Verifying rlcone configuration..."
+    log_progress "Verifying rclone configuration..."
     if ! [ -e "/root/.config/rclone/rclone.conf" ]
     then
         log_progress "STOP: rclone config was not found. did you configure rclone correctly?"
         exit 1
     fi
 
-    if ! rclone lsd "$RCLONE_DRIVE": | grep -q "$RCLONE_PATH"
+    if ! rclone ls "$RCLONE_DRIVE:$RCLONE_PATH"
     then
         log_progress "STOP: Could not find the $RCLONE_DRIVE:$RCLONE_PATH"
         exit 1

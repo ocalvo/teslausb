@@ -3,6 +3,7 @@
 # Adapted from https://github.com/adafruit/Raspberry-Pi-Installer-Scripts/blob/master/read-only-fs.sh
 
 function log_progress () {
+  # shellcheck disable=SC2034
   if typeset -f setup_progress > /dev/null; then
     setup_progress "make-root-fs-readonly: $1"
   fi
@@ -37,6 +38,9 @@ append_cmdline_txt_param fastboot
 append_cmdline_txt_param noswap
 append_cmdline_txt_param ro
 
+# we're not using swap, so delete the swap file for some extra space
+rm -f /var/swap
+
 # Move fake-hwclock.data to /mutable directory so it can be updated
 if ! findmnt --mountpoint /mutable
 then
@@ -55,6 +59,13 @@ then
     mv /etc/fake-hwclock.data /mutable/etc/fake-hwclock.data
     ln -s /mutable/etc/fake-hwclock.data /etc/fake-hwclock.data
 fi
+# By default fake-hwclock is run during early boot, before /mutable
+# has been mounted and so will fail. Delay running it until /mutable
+# has been mounted.
+if [ -e /lib/systemd/system/fake-hwclock.service ]
+then
+  sed -i 's/Before=.*/After=mutable.mount/' /lib/systemd/system/fake-hwclock.service
+fi
 
 # Create a configs directory for others to use
 if [ ! -e "/mutable/configs" ]
@@ -63,8 +74,16 @@ then
 fi
 
 # Move /var/spool to /tmp
-rm -rf /var/spool
-ln -s /tmp /var/spool
+if [ -L /var/spool ]
+then
+  log_progress "fixing /var/spool"
+  rm /var/spool
+  mkdir /var/spool
+  chmod 755 /var/spool
+  # a tmpfs fstab entry for /var/spool will be added below
+else
+  rm -rf /var/spool/*
+fi
 
 # Change spool permissions in var.conf (rondie/Margaret fix)
 sed -i "s/spool\s*0755/spool 1777/g" /usr/lib/tmpfiles.d/var.conf >/dev/null
@@ -102,6 +121,11 @@ fi
 if ! grep -w -q "/tmp" /etc/fstab
 then
   echo "tmpfs /tmp    tmpfs nodev,nosuid 0 0" >> /etc/fstab
+fi
+
+if ! grep -w -q "/var/spool" /etc/fstab
+then
+  echo "tmpfs /var/spool tmpfs nodev,nosuid 0 0" >> /etc/fstab
 fi
 
 log_progress "done"

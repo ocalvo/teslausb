@@ -1,12 +1,13 @@
 #!/bin/bash -eu
 
-if [ "$BASH_SOURCE" != "$0" ]
+if [ "${BASH_SOURCE[0]}" != "$0" ]
 then
-  echo "$BASH_SOURCE must be executed, not sourced"
+  echo "${BASH_SOURCE[0]} must be executed, not sourced"
   return 1 # shouldn't use exit when sourced
 fi
 
 function log_progress () {
+  # shellcheck disable=SC2034
   if typeset -f setup_progress > /dev/null; then
     setup_progress "configure: $1"
   fi
@@ -18,7 +19,8 @@ then
   PARENT="$(ps -o comm= $PPID)"
   if [ "$PARENT" != "setup-teslausb" ]
   then
-    log_progress "WARNING: $0 not called from setup-teslausb: $PARENT"
+    log_progress "STOP: $0 must be called from setup-teslausb: $PARENT"
+    exit 1
   fi
 
   if FLOCKED="$0" flock -en -E 99 "$0" "$0" "$@" || case "$?" in
@@ -34,12 +36,7 @@ then
   fi
 fi
 
-REPO=${REPO:-marcone}
-BRANCH=${BRANCH:-main-dev}
-
 ARCHIVE_SYSTEM=${ARCHIVE_SYSTEM:-none}
-
-log_progress "$0 starting with REPO=$REPO, BRANCH=$BRANCH, ARCHIVE_SYSTEM=$ARCHIVE_SYSTEM"
 
 function check_variable () {
     local var_name="$1"
@@ -48,17 +45,6 @@ function check_variable () {
         log_progress "STOP: Define the variable $var_name like this: export $var_name=value"
         exit 1
     fi
-}
-
-function get_script () {
-    local local_path="$1"
-    local name="$2"
-    local remote_path="${3:-}"
-
-    log_progress "Starting download for $local_path/$name"
-    curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/teslausb/"$BRANCH"/"$remote_path"/"$name"
-    chmod +x "$local_path/$name"
-    log_progress "Done"
 }
 
 function install_rc_local () {
@@ -152,26 +138,29 @@ function install_archive_scripts () {
     local archive_module="$2"
 
     log_progress "Installing base archive scripts into $install_path"
-    get_script $install_path archiveloop run
-    get_script $install_path remountfs_rw run
+    get_script "$install_path" archiveloop run
+    get_script "$install_path" waitforidle run
+    get_script "$install_path" remountfs_rw run
     # Install the tesla_api.py script only if the user provided credentials for its use.
-    if [ ! -z ${tesla_email:+x} ]
+    # shellcheck disable=SC2154
+    if [ -n "${tesla_email:+x}" ]
     then
-      get_script $install_path tesla_api.py run
+      get_script "$install_path" tesla_api.py run
     else
       log_progress "Skipping tesla_api.py install"
     fi
 
     log_progress "Installing archive module scripts"
-    get_script /tmp verify-and-configure-archive.sh $archive_module
-    get_script $install_path archive-clips.sh $archive_module
-    get_script $install_path connect-archive.sh $archive_module
-    get_script $install_path disconnect-archive.sh $archive_module
-    get_script $install_path write-archive-configs-to.sh $archive_module
-    get_script $install_path archive-is-reachable.sh $archive_module
-    if [ ! -z ${musicsharename:+x} ]
+    get_script /tmp verify-and-configure-archive.sh "$archive_module"
+    get_script "$install_path" archive-clips.sh "$archive_module"
+    get_script "$install_path" connect-archive.sh "$archive_module"
+    get_script "$install_path" disconnect-archive.sh "$archive_module"
+    get_script "$install_path" write-archive-configs-to.sh "$archive_module"
+    get_script "$install_path" archive-is-reachable.sh "$archive_module"
+    # shellcheck disable=SC2154
+    if [ -n "${musicsharename:+x}" ] && grep cifs <<< "$archive_module"
     then
-      get_script $install_path copy-music.sh $archive_module
+      get_script "$install_path" copy-music.sh "$archive_module"
     fi
 }
 
@@ -183,9 +172,10 @@ function install_python_packages () {
 }
 
 function check_pushover_configuration () {
-    if [ ! -z "${pushover_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${pushover_enabled+x}" ]
     then
-        if [ ! -n "${pushover_user_key+x}" ] || [ ! -n "${pushover_app_key+x}"  ]
+        if [ -z "${pushover_user_key+x}" ] || [ -z "${pushover_app_key+x}"  ]
         then
             log_progress "STOP: You're trying to setup Pushover but didn't provide your User and/or App key."
             log_progress "Define the variables like this:"
@@ -201,9 +191,10 @@ function check_pushover_configuration () {
 }
 
 function check_gotify_configuration () {
-    if [ ! -z "${gotify_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${gotify_enabled+x}" ]
     then
-        if [ ! -n "${gotify_domain+x}" ] || [ ! -n "${gotify_app_token+x}"  ]
+        if [ -z "${gotify_domain+x}" ] || [ -z "${gotify_app_token+x}"  ]
         then
             log_progress "STOP: You're trying to setup Gotify but didn't provide your Domain and/or App token."
             log_progress "Define the variables like this:"
@@ -219,9 +210,10 @@ function check_gotify_configuration () {
 }
 
 function check_ifttt_configuration () {
-    if [ ! -z "${ifttt_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${ifttt_enabled+x}" ]
     then
-        if [ ! -n "${ifttt_event_name+x}" ] || [ ! -n "${ifttt_key+x}"  ]
+        if [ -z "${ifttt_event_name+x}" ] || [ -z "${ifttt_key+x}"  ]
         then
             log_progress "STOP: You're trying to setup IFTTT but didn't provide your Event Name and/or key."
             log_progress "Define the variables like this:"
@@ -237,9 +229,10 @@ function check_ifttt_configuration () {
 }
 
 function check_sns_configuration () {
-    if [ ! -z "${sns_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${sns_enabled+x}" ]
     then
-        if [ ! -n "${aws_access_key_id+x}" ] || [ ! -n "${aws_secret_key+x}" || [ ! -n "${aws_sns_topic_arn+x}"  ]
+        if [ -z "${aws_access_key_id:+x}" ] || [ -z "${aws_secret_key:+x}" ] || [ -z "${aws_sns_topic_arn:+x}" ]
         then
             echo "STOP: You're trying to setup AWS SNS but didn't provide your User and/or App key and/or topic ARN."
             echo "Define the variables like this:"
@@ -247,7 +240,7 @@ function check_sns_configuration () {
             echo "export aws_secret_key=put_your_secretkey_here"
             echo "export aws_sns_topic_arn=put_your_sns_topicarn_here"
             exit 1
-        elif [ "${aws_access_key_id}" = "put_your_accesskeyid_here" ] || [  "${aws_secret_key}" = "put_your_secretkey_here"  || [  "${aws_sns_topic_arn}" = "put_your_sns_topicarn_here" ]
+        elif [ "${aws_access_key_id}" = "put_your_accesskeyid_here" ] || [ "${aws_secret_key}" = "put_your_secretkey_here" ] || [ "${aws_sns_topic_arn}" = "put_your_sns_topicarn_here" ]
         then
             echo "STOP: You're trying to setup SNS, but didn't replace the default values."
             exit 1
@@ -256,46 +249,54 @@ function check_sns_configuration () {
 }
 
 function configure_pushover () {
-    if [ ! -z "${pushover_enabled+x}" ]
+    if [ -n "${pushover_enabled+x}" ]
     then
         log_progress "Enabling pushover"
-        echo "export pushover_enabled=true" > /root/.teslaCamPushoverCredentials
-        echo "export pushover_user_key=$pushover_user_key" >> /root/.teslaCamPushoverCredentials
-        echo "export pushover_app_key=$pushover_app_key" >> /root/.teslaCamPushoverCredentials
+        {
+            echo "export pushover_enabled=true"
+            echo "export pushover_user_key=$pushover_user_key"
+            echo "export pushover_app_key=$pushover_app_key"
+        } > /root/.teslaCamPushoverCredentials
     else
         log_progress "Pushover not configured."
     fi
 }
 
 function configure_gotify () {
-    if [ ! -z "${gotify_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${gotify_enabled+x}" ]
     then
         log_progress "Enabling Gotify"
-        echo "export gotify_enabled=true" > /root/.teslaCamGotifySettings
-        echo "export gotify_domain=$gotify_domain" >> /root/.teslaCamGotifySettings
-        echo "export gotify_app_token=$gotify_app_token" >> /root/.teslaCamGotifySettings
-        echo "export gotify_priority=$gotify_priority" >> /root/.teslaCamGotifySettings
+        {
+            echo "export gotify_enabled=true"
+            echo "export gotify_domain=$gotify_domain"
+            echo "export gotify_app_token=$gotify_app_token"
+            echo "export gotify_priority=$gotify_priority"
+        } > /root/.teslaCamGotifySettings
     else
         log_progress "Gotify not configured."
     fi
 }
 
 function configure_ifttt () {
-    if [ ! -z "${ifttt_enabled+x}" ]
+    if [ -n "${ifttt_enabled+x}" ]
     then
         log_progress "Enabling IFTTT"
-        echo "export ifttt_enabled=true" > /root/.teslaCamIftttSettings
-        echo "export ifttt_event_name=$ifttt_event_name" >> /root/.teslaCamIftttSettings
-        echo "export ifttt_key=$ifttt_key" >> /root/.teslaCamIftttSettings
+        {
+            echo "export ifttt_enabled=true"
+            echo "export ifttt_event_name=$ifttt_event_name"
+            echo "export ifttt_key=$ifttt_key"
+        } > /root/.teslaCamIftttSettings
     else
-        log_progress "Gotify not configured."
+        log_progress "IFTTT not configured."
     fi
 }
 
 function configure_sns () {
-    if [ ! -z "${sns_enabled+x}" ]
+    # shellcheck disable=SC2154
+    if [ -n "${sns_enabled+x}" ]
     then
-        echo "Enabling SNS"
+        log_progress "Enabling SNS"
         mkdir /root/.aws
 
         echo "[default]" > /root/.aws/credentials
@@ -310,7 +311,7 @@ function configure_sns () {
 
         install_python_packages
     else
-        echo "SNS not configured."
+        log_progress "SNS not configured."
     fi
 }
 
@@ -341,10 +342,11 @@ function check_and_configure_sns () {
 
 function install_push_message_scripts() {
     local install_path="$1"
-    get_script $install_path send-push-message run
-    get_script $install_path send_sns.py run
+    get_script "$install_path" send-push-message run
+    get_script "$install_path" send_sns.py run
 }
 
+# shellcheck disable=SC2046
 if ! [ $(id -u) = 0 ]
 then
     log_progress "STOP: Run sudo -i."
@@ -352,8 +354,6 @@ then
 fi
 
 mkdir -p /root/bin
-
-log_progress "Getting files from $REPO:$BRANCH"
 
 check_and_configure_pushover
 check_and_configure_gotify
@@ -372,7 +372,7 @@ echo "SNAPSHOTS_ENABLED=${SNAPSHOTS_ENABLED:-true}" >> $configFile
 archive_module="$( get_archive_module )"
 log_progress "Using archive module: $archive_module"
 
-install_archive_scripts /root/bin $archive_module
+install_archive_scripts /root/bin "$archive_module"
 /tmp/verify-and-configure-archive.sh
 
 install_rc_local /root/bin
