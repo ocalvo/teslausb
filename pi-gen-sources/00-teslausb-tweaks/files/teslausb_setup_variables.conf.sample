@@ -66,7 +66,8 @@ export WIFIPASS='your_pass'
 # If doing a headless (i.e. automatic) setup
 export HEADLESS_SETUP=true
 
-# uncomment to enable a samba server that exports the recordings
+# uncomment to enable a samba/cifs server that makes the recordings
+# available as a network share
 #export SAMBA_ENABLED=true
 # uncomment to enable guest access to the samba server
 #export SAMBA_GUEST=true
@@ -95,18 +96,18 @@ export HEADLESS_SETUP=true
 # export TESLAUSB_HOSTNAME=teslausb-Model3
 
 # Uncomment if setting up Pushover push notifications
-# export pushover_enabled=false
+# export pushover_enabled=true
 # export pushover_user_key=user_key
 # export pushover_app_key=app_key
 
 # Uncomment if setting up Gotify push notifications
-# export gotify_enabled=false
+# export gotify_enabled=true
 # export gotify_domain=https://gotify.domain.com
 # export gotify_app_token=put_your_token_here
 # export gotify_priority=5
 
 # Uncomment if setting up IFTTT push notifications
-# export ifttt_enabled=false
+# export ifttt_enabled=true
 # export ifttt_event_name=put_your_event_name_here
 # export ifttt_key=put_your_key_here
 
@@ -126,6 +127,9 @@ export HEADLESS_SETUP=true
 #   as if the Pi or the car is stolen, the thief has access to your Tesla account 
 #   and could change the password, add their own devices as a key, steal the car,
 #   etc.  If either is stolen, CHANGE YOUR TESLA PASSWORD IMMEDIATELY.
+#
+# ALSO NOTE: having sentry mode enabled in your Tesla will keep your car awake.
+#   But, make sure you have not excluded your home in the sentry mode settings.
 #
 # export tesla_email=joeshmo@gmail.com
 # export tesla_password=teslapass
