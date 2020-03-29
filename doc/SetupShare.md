@@ -32,5 +32,9 @@ Now, on the Pi:
     export shareuser="sailfish"
     export sharepassword="pa$$w0rd"
     ```
+    And optionally:
+    ```
+    export sharedomain="WORKGROUP"
+    ```
 
 Now stay in your `sudo -i` session and return to the section "Set up the USB storage functionality" in the [main instructions](/README.md).
